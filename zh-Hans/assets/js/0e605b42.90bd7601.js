@@ -1,0 +1,28 @@
+"use strict";(self.webpackChunksandbox_fusion=self.webpackChunksandbox_fusion||[]).push([[9643],{30304:(e,n,s)=>{s.r(n),s.d(n,{assets:()=>c,contentTitle:()=>l,default:()=>x,frontMatter:()=>a,metadata:()=>r,snippet1:()=>u,snippet2:()=>p,toc:()=>h});var o=s(74848),t=s(28453),d=s(27856),i=s(52138);const a={sidebar_position:1},l="Upload & Download Files",r={id:"docs/how-to/run-code/upload-download-files",title:"Upload & Download Files",description:"runcode \u548c runjupyter \u63a5\u53e3\u90fd\u652f\u6301\u6587\u4ef6\u76f8\u5173\u7684\u4e24\u4e2a\u53c2\u6570\uff1a",source:"@site/i18n/zh-Hans/docusaurus-plugin-content-docs/current/docs/how-to/run-code/upload-download-files.mdx",sourceDirName:"docs/how-to/run-code",slug:"/docs/how-to/run-code/upload-download-files",permalink:"/SandboxFusion/zh-Hans/docs/docs/how-to/run-code/upload-download-files",draft:!1,unlisted:!1,editUrl:"https://github.com/bytedance/SandboxFusion/tree/main/docs/docs/docs/how-to/run-code/upload-download-files.mdx",tags:[],version:"current",sidebarPosition:1,frontMatter:{sidebar_position:1},sidebar:"docSidebar",previous:{title:"Run Code",permalink:"/SandboxFusion/zh-Hans/docs/category/run-code"},next:{title:"Jupyter Mode",permalink:"/SandboxFusion/zh-Hans/docs/docs/how-to/run-code/jupyter-mode"}},c={},u=String.raw`import json
+import base64
+import requests
+
+with open('flag.txt', 'rb') as f:
+    content = f.read()
+base64_content = base64.b64encode(content).decode('utf-8')
+
+response = requests.post('${d.A.host}/run_code', json={
+    'code': 'print(open("flag.txt").read())',
+    'language': 'python',
+    'files': {'flag.txt': base64_content}
+})
+
+print(json.dumps(response.json(), indent=2))
+`,p=String.raw`import json
+import base64
+import requests
+
+response = requests.post('${d.A.host}/run_code', json={
+    'code': 'open("flag.txt", "w").write("this is a secret")',
+    'language': 'python',
+    'fetch_files': ['flag.txt']
+})
+
+print(json.dumps(response.json(), indent=2))
+print(base64.b64decode(response.json()['files']['flag.txt']).decode('utf-8'))
+`,h=[{value:"Upload",id:"upload",level:2},{value:"Download",id:"download",level:2}];function g(e){const n={code:"code",h1:"h1",h2:"h2",header:"header",li:"li",p:"p",pre:"pre",ul:"ul",...(0,t.R)(),...e.components};return(0,o.jsxs)(o.Fragment,{children:[(0,o.jsx)(n.header,{children:(0,o.jsx)(n.h1,{id:"upload--download-files",children:"Upload & Download Files"})}),"\n",(0,o.jsx)(n.p,{children:"run_code \u548c run_jupyter \u63a5\u53e3\u90fd\u652f\u6301\u6587\u4ef6\u76f8\u5173\u7684\u4e24\u4e2a\u53c2\u6570\uff1a"}),"\n",(0,o.jsxs)(n.ul,{children:["\n",(0,o.jsx)(n.li,{children:"files: \u4ee3\u7801\u6267\u884c\u524d\u8981\u4e0a\u4f20\u7684\u6587\u4ef6\uff0c\u6587\u4ef6\u8def\u5f84\u5230\u6587\u4ef6base64\u5185\u5bb9\u7684\u5b57\u5178"}),"\n",(0,o.jsx)(n.li,{children:"fetch_files: \u4ee3\u7801\u6267\u884c\u7ed3\u675f\u540e\u8981\u53d6\u56de\u7684\u6587\u4ef6\uff0c\u6587\u4ef6\u8def\u5f84\u7684\u5217\u8868"}),"\n"]}),"\n",(0,o.jsx)(n.p,{children:"\u56e0\u4e3a\u53c2\u6570\u7684\u4f7f\u7528\u5b8c\u5168\u76f8\u540c\uff0c\u4e0b\u9762\u4ee5 run_code \u63a5\u53e3\u4e3a\u4f8b\u8bf4\u660e\u6587\u4ef6\u7684\u4e0a\u4f20\u548c\u4e0b\u8f7d\u3002"}),"\n",(0,o.jsx)(n.h2,{id:"upload",children:"Upload"}),"\n","\n",(0,o.jsx)(i.default,{language:"python",children:u}),"\n",(0,o.jsx)(n.p,{children:"\u8f93\u51fa\uff1a"}),"\n",(0,o.jsx)(n.pre,{children:(0,o.jsx)(n.code,{className:"language-json",children:'{\n  "status": "Success",\n  "message": "",\n  "compile_result": null,\n  "run_result": {\n    "status": "Finished",\n    "execution_time": 0.018889427185058594,\n    "return_code": 0,\n    "stdout": "secret flag\\n",\n    "stderr": ""\n  },\n  "executor_pod_name": null,\n  "files": {}\n}\n'})}),"\n",(0,o.jsx)(n.p,{children:"\u6587\u4ef6\u8def\u5f84\u9ed8\u8ba4\u4e3a\u76f8\u5bf9\u811a\u672c\u6240\u5728\u76ee\u5f55\uff08\u6bcf\u6b21\u968f\u673a\u751f\u6210\u7684/tmp/tmpxxxx\uff09\u7684\u4f4d\u7f6e\u3002 \u4e5f\u53ef\u4ee5\u6307\u5b9a /tmp/flag.txt\u8fd9\u79cd\u7edd\u5bf9\u8def\u5f84\u3002 \u5982\u679c\u6307\u5b9a\u7684\u8def\u5f84\u4e0d\u5b58\u5728\uff0c\u4f1a\u5148\u521b\u5efa\u5bf9\u5e94\u7684\u6587\u4ef6\u5939\u3002"}),"\n",(0,o.jsx)(n.h2,{id:"download",children:"Download"}),"\n","\n",(0,o.jsx)(i.default,{language:"python",children:p}),"\n",(0,o.jsx)(n.p,{children:"\u8f93\u51fa\uff1a"}),"\n",(0,o.jsx)(n.pre,{children:(0,o.jsx)(n.code,{className:"language-json",children:'{\n  "status": "Success",\n  "message": "",\n  "compile_result": null,\n  "run_result": {\n    "status": "Finished",\n    "execution_time": 0.023561477661132812,\n    "return_code": 0,\n    "stdout": "",\n    "stderr": ""\n  },\n  "executor_pod_name": null,\n  "files": {\n    "flag.txt": "dGhpcyBpcyBhIHNlY3JldA=="\n  }\n}\nthis is a secret\n'})}),"\n",(0,o.jsx)(n.p,{children:"\u6587\u4ef6\u8def\u5f84\u7684\u89c4\u5219\u4e0e\u4e0a\u4f20\u90e8\u5206\u76f8\u540c\u3002"})]})}function x(e={}){const{wrapper:n}={...(0,t.R)(),...e.components};return n?(0,o.jsx)(n,{...e,children:(0,o.jsx)(g,{...e})}):g(e)}},27856:(e,n,s)=>{s.d(n,{A:()=>o});const o={image:"vemlp-cn-beijing.cr.volces.com/preset-images/code-sandbox:opensource_20241022",host:"http://localhost:8080",datasets:{AutoEval:{datasets:[{id:"leetcode_sample_python",huggingFace:{id:"sine/LeetCodeSample",subset:"python",split:"test"}}]},HumanEval:{datasets:[{id:"humaneval_python",huggingFace:{id:"sine/FusedHumanEvalPython",split:"test"}}]},CommonOJ:{datasets:[{id:"code_contests_train",huggingFace:{id:"sine/FusedCodeContests",split:"train"}},{id:"code_contests_valid",huggingFace:{id:"sine/FusedCodeContests",split:"valid"}},{id:"code_contests_test",huggingFace:{id:"sine/FusedCodeContests",split:"test"}}]}}}}}]);

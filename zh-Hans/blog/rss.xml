@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?><?xml-stylesheet type="text/xsl" href="rss.xsl"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+    <channel>
+        <title>Sandbox Fusion Blog</title>
+        <link>https://your-docusaurus-site.example.com/SandboxFusion/zh-Hans/blog</link>
+        <description>Sandbox Fusion Blog</description>
+        <lastBuildDate>Fri, 18 Oct 2024 00:00:00 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>https://github.com/jpmonette/feed</generator>
+        <language>zh-Hans</language>
+        <item>
+            <title><![CDATA[Initial Release]]></title>
+            <link>https://your-docusaurus-site.example.com/SandboxFusion/zh-Hans/blog/initial-release</link>
+            <guid>https://your-docusaurus-site.example.com/SandboxFusion/zh-Hans/blog/initial-release</guid>
+            <pubDate>Fri, 18 Oct 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[The Sandbox is now open sourced, enjoy!]]></description>
+            <content:encoded><![CDATA[<p>The Sandbox is now open sourced, enjoy!</p>]]></content:encoded>
+        </item>
+    </channel>
+</rss>
