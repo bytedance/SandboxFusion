@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-import json
 from typing import Any, Dict, List, Optional
 
 from sandbox.database import get_row_by_id_in_table, get_rows_in_table
@@ -81,52 +79,25 @@ class VerilogDataset(CodingDataset):
                                            cls.get_table_name(request.dataset),
                                            columns=['task_id', 'code_preface', 'canonical_solution', "test"])
 
-        task_id = row['task_id']
         code_preface = row['code_preface']
-        canonical_solution = row['canonical_solution']
-        test = row['test']
+        test_code = row['test']
         completion, _ = extract_code_from_freeform_completion_v2(request.completion,
                                                                  language='verilog',
                                                                  first_block_only=True)
-        full_code = code_preface + completion
-        # save the result in the following JSON Lines (jsonl) format,
-        # where each sample is formatted into a single line like so:
-        # {"task_id": "Corresponding VerilogEval task ID", "completion": "Completion only without the prompt"}
-        samples = json.dumps({"task_id": task_id, "completion": completion}).encode("utf-8")
-        problem_file = json.dumps({
-            "task_id": task_id,
-            "prompt": code_preface,
-            "canonical_solution": canonical_solution,
-            "test": test
-        }).encode("utf-8")
-        files = {'samples.jsonl': samples, "problem_file.jsonl": problem_file}
-        files = {key: base64.b64encode(value).decode('utf-8') for key, value in files.items()}
+        full_code = f"{code_preface}\n{completion}"
+        verilog_test_code = f"{test_code}\n{full_code}"
+
         result = await run_code_in_sandbox(
             RunCodeRequest(
-                code='',
-                files=files,
+                code=verilog_test_code,
                 language='verilog',
                 compile_timeout=request.config.compile_timeout or 60,
                 run_timeout=request.config.run_timeout or 30,
             ))
         accepted = result.status == RunStatus.Success
-        if accepted:
-            # if result.status == RunStatus.Success, we should check run_result for detailed stdout info
-            stdout = result.run_result.stdout
-            try:
-                # check if the last line of standard output is {'pass@1': 1}
-                # (Jing): Maybe we should try a more elegant manner
-                info = json.loads(
-                    stdout.strip('\n').split('\n')[-1].replace("\'", "\"").replace('np.float64(', '').replace(')', ''))
-                accepted = info["pass@1"] == 1
-            except Exception as e:
-                accepted = False
-
         return EvalResult(id=request.id,
                           accepted=accepted,
                           extracted_code=completion,
                           full_code=full_code,
-                          tests=[EvalTestCase(
-                              passed=accepted,
-                              exec_info=result,
-                          )])
+                          test_code=test_code,
+                          tests=[EvalTestCase(passed=accepted, exec_info=result)])

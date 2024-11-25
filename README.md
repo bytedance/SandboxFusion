@@ -103,6 +103,12 @@ Run a specific unit test (allows you to see stdout):
 make test-case CASE=test_java_assert
 ```
 
+Run a specific unit test with pdb:
+
+```bash
+make test-case-pdb CASE=test_java_assert
+```
+
 Format the code:
 
 ```bash

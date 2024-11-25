@@ -115,3 +115,20 @@ endmodule
     assert response.status_code == 200
     result = EvalResult(**response.json())
     assert result.accepted == True
+
+
+@pytest.mark.parametrize("dataset, id", [("verilogeval_human", 0), ("verilogeval_machine", 73)])
+@pytest.mark.parametrize("is_fewshot", [True, False])
+async def test_verilog_CompileError(dataset, id, is_fewshot):
+    request = SubmitRequest(dataset=dataset,
+                            id=id,
+                            config=TestConfig(language='verilog', is_fewshot=is_fewshot),
+                            completion='''
+```Verilog
+    assign out = sel ? b : a;
+```
+''')
+    response = client.post('/submit', json=request.model_dump())
+    assert response.status_code == 200
+    result = EvalResult(**response.json())
+    assert result.accepted == False

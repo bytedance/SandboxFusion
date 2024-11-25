@@ -1023,7 +1023,7 @@ class LiveCodeBenchDataset(CodingDataset):
         except:
             test_cases = pickle.loads(zlib.decompress(base64.b64decode(row['test'])))
         test_cnt = len(json.loads(test_cases['input_output'])['inputs'])
-        total_timeout = min((timeout + 1) * test_cnt + 5, 315)
+        total_timeout = min((timeout + 1) * test_cnt + 5, 160)
 
         code = default_extract_helper(request.completion, 'python', request.config.custom_extract_logic)
         test_code = TEST_CODE % {'timeout': timeout}

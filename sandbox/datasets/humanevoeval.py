@@ -14,7 +14,7 @@
 
 import inspect
 
-from sandbox.datasets.humaneval import HumanEvalDataset
+from sandbox.datasets.humaneval_deprecated import HumanEvalDeprecatedDataset
 from sandbox.datasets.types import SubmitRequest
 from sandbox.utils.extraction import extract_code_from_freeform_completion
 
@@ -32,7 +32,7 @@ def get_categories(results):
     return categories_counts
 
 
-class EvoEvalDataset(HumanEvalDataset):
+class EvoEvalDataset(HumanEvalDeprecatedDataset):
 
     @classmethod
     def _gen_pretrain_code(cls, request: SubmitRequest, row) -> str:

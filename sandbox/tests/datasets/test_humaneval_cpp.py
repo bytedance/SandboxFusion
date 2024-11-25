@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 from fastapi.testclient import TestClient
 
 from sandbox.datasets.types import EvalResult, Prompt, TestConfig
@@ -22,39 +21,33 @@ from sandbox.server.server import app
 client = TestClient(app)
 
 
-@pytest.mark.datalake
-async def test_humaneval_cpp_ooc_test_get():
-    request = GetPromptsRequest(dataset='humaneval_cpp_ooc_test', config=TestConfig(dataset_type='HumanEvalDataset',))
+async def test_humaneval_cpp_get():
+    request = GetPromptsRequest(dataset='humaneval_cpp', config=TestConfig())
     response = client.post('/get_prompts', json=request.model_dump())
     assert response.status_code == 200
     results = [Prompt(**sample) for sample in response.json()]
     print(results)
 
 
-@pytest.mark.datalake
-async def test_humaneval_cpp_ooc_test_get_id():
-    request = GetPromptByIdRequest(dataset='humaneval_cpp_ooc_test',
-                                   id=4,
-                                   config=TestConfig(dataset_type='HumanEvalDataset',))
+async def test_humaneval_cpp_get_id():
+    request = GetPromptByIdRequest(dataset='humaneval_cpp', id=4, config=TestConfig())
     response = client.post('/get_prompt_by_id', json=request.model_dump())
     assert response.status_code == 200
     result = Prompt(**response.json())
     print(result)
 
 
-@pytest.mark.datalake
-async def test_humaneval_cpp_ooc_test_list_ids():
-    request = GetPromptsRequest(dataset='humaneval_cpp_ooc_test', config=TestConfig(dataset_type='HumanEvalDataset',))
+async def test_humaneval_cpp_list_ids():
+    request = GetPromptsRequest(dataset='humaneval_cpp', config=TestConfig())
     response = client.post('/list_ids', json=request.model_dump())
     assert response.status_code == 200
     print(response.json())
 
 
-@pytest.mark.datalake
-async def test_humaneval_cpp_ooc_test_submit_passed():
-    request = SubmitRequest(dataset='humaneval_cpp_ooc_test',
+async def test_humaneval_cpp_submit_passed():
+    request = SubmitRequest(dataset='humaneval_cpp',
                             id=4,
-                            config=TestConfig(dataset_type='HumanEvalDataset', language='python'),
+                            config=TestConfig(language='python'),
                             completion='''
     if (numbers.empty()) {
         return 0.0; // Handle case where the input vector is empty
@@ -80,11 +73,10 @@ async def test_humaneval_cpp_ooc_test_submit_passed():
     assert result.accepted == True
 
 
-@pytest.mark.datalake
-async def test_humaneval_cpp_ooc_test_submit_failed():
-    request = SubmitRequest(dataset='humaneval_cpp_ooc_test',
+async def test_humaneval_cpp_submit_failed():
+    request = SubmitRequest(dataset='humaneval_cpp',
                             id=4,
-                            config=TestConfig(dataset_type='HumanEvalDataset', language='python'),
+                            config=TestConfig(language='python'),
                             completion='''
     mean = max(numbers) / len(numbers)
     return sum(abs(x - mean) for x in numbers) / len(numbers)

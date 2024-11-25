@@ -107,13 +107,13 @@ async def run_kotlin_script(args: CodeRunArgs) -> CodeRunResult:
 
 
 async def run_verilog(args: CodeRunArgs) -> CodeRunResult:
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-        restore_files(tmp_dir, args.files)
-        samples_file = os.path.join(tmp_dir, 'samples.jsonl')
-        problem_file = os.path.join(tmp_dir, 'problem_file.jsonl')
-
-        cmd = f'evaluate_functional_correctness {samples_file} --problem_file {problem_file}'
-        return await run_commands(None, cmd, tmp_dir, {}, args)
+    with tempfile.TemporaryDirectory(dir=get_tmp_dir(), ignore_cleanup_errors=True) as tmp_dir:
+        with tempfile.NamedTemporaryFile(mode='w', dir=tmp_dir, suffix='.sv', delete=False) as f:
+            f.write(args.code)
+            # Refer to https://github.com/NVlabs/verilog-eval/blob/4fa0ac4ed70ff1685114c25cd2e4c17cbba6a0c4/verilog_eval/execution.py#L82
+            compile_cmd = f"iverilog -Wall -Winfloop -Wno-timescale -g2012 -s tb -o test.vvp {f.name};"
+            run_cmd = f"vvp -n test.vvp"
+        return await run_commands(compile_cmd, run_cmd, tmp_dir, {}, args)
 
 
 async def run_lean(args: CodeRunArgs) -> CodeRunResult:

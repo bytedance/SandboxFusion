@@ -127,7 +127,7 @@ def get_java_test_assets(code: List[str], test: str) -> Dict[str, str]:
         'enum_name': r'enum (.*?)\s'
     }
 
-    for c in code:
+    for c in code + [test]:
         c = '\n' + c
         imports = [i[1] for i in re.findall(patterns['import'], c, re.MULTILINE)]
 
@@ -138,9 +138,6 @@ def get_java_test_assets(code: List[str], test: str) -> Dict[str, str]:
                 files[f'{name}.java'] = ("import org.junit.jupiter.api.Test;\n"
                                          "import static org.junit.jupiter.api.Assertions.*;\n" + "\n".join(imports) +
                                          "\n" + item + '\n')
-
-    test_class_name = re.search(r'class (.*?)\s', test, re.DOTALL).group(1)
-    files[f'{test_class_name}.java'] = test
 
     return {k: base64.b64encode(v.encode('utf-8')).decode('utf-8') for k, v in files.items()}
 

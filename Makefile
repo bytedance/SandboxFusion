@@ -19,17 +19,14 @@ test-cuda:
 test-minor:
 	pytest -m minor
 
-test-verilog:
-	pytest -m verilog
-
-test-verilog-pdb:
-	pytest -m verilog --pdb --capture=no
-
 test-online:
 	ONLINE_TEST=1 pytest
 
 test-case:
 	pytest -s -vv -k $(CASE)
+
+test-case-pdb:
+	pytest -s -vv -k $(CASE) --pdb
 
 format:
 	pycln --config pyproject.toml

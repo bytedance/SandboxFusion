@@ -27,77 +27,46 @@ from sandbox.datasets.types import (
     TestConfig,
 )
 from sandbox.utils.common import ensure_json
-from sandbox.utils.extraction import extract_code_from_freeform_completion
+from sandbox.utils.extraction import default_extract_helper
 from sandbox.utils.sandbox_client import run_code_in_sandbox
-
-
-def postprocess_completion(completion, stop_words=["\nassert", '\n"""']):
-    if '[DONE]' in completion:
-        completion = completion[:completion.index('[DONE]')]
-
-    code, _ = extract_code_from_freeform_completion(completion, 'python', first_block_only=True)
-
-    for st in stop_words:
-        index = code.find(st)
-        if index != -1:
-            code = code[:index]
-    return code
 
 
 class MBPPDataset(CodingDataset):
 
     @classmethod
     async def get_prompts(cls, request: GetPromptsRequest) -> List[Prompt]:
-        rows = await get_rows_in_table(request,
-                                       cls.get_table_name(request.dataset),
-                                       columns=['id', 'content', 'labels', 'test_list'])
+        rows = await get_rows_in_table(
+            request,
+            cls.get_table_name(request.dataset),
+            columns=['id', 'labels', 'content', 'test'],
+        )
         return [cls._generate_single_prompt(r, request.config) for r in rows]
 
     @classmethod
     async def get_prompt_by_id(cls, request: GetPromptByIdRequest) -> Prompt:
         row = await get_row_by_id_in_table(request,
                                            cls.get_table_name(request.dataset),
-                                           columns=['id', 'content', 'labels', 'test_list'])
+                                           columns=['id', 'labels', 'content', 'test'])
         return cls._generate_single_prompt(row, request.config)
 
     @classmethod
     def _generate_single_prompt(cls, row: Dict[str, Any], config: TestConfig) -> Prompt:
-        ensure_json(row, 'labels')
-        ensure_json(row, 'test_list')
-        is_fewshot_task = config.is_fewshot
-        if is_fewshot_task:
-            task_id_2 = 'You are an expert Python programmer, and here is your task: Write a function to find the similar elements from the given two tuple lists. Your code should pass these tests:\n\nassert similar_elements((3, 4, 5, 6),(5, 7, 4, 10)) == (4, 5)\nassert similar_elements((1, 2, 3, 4),(5, 4, 3, 7)) == (3, 4)\nassert similar_elements((11, 12, 14, 13),(17, 15, 14, 13)) == (13, 14)\n[BEGIN]\ndef similar_elements(test_tup1, test_tup2):\r\n  res = tuple(set(test_tup1) & set(test_tup2))\r\n  return (res)\n[DONE]'
-            task_id_3 = 'You are an expert Python programmer, and here is your task: Write a python function to identify non-prime numbers. Your code should pass these tests:\n\nassert is_not_prime(2) == False\nassert is_not_prime(10) == True\nassert is_not_prime(35) == True\n[BEGIN]\nimport math\r\ndef is_not_prime(n):\r\n    result = False\r\n    for i in range(2,int(math.sqrt(n)) + 1):\r\n        if n % i == 0:\r\n            result = True\r\n    return result\n[DONE]'
-            task_id_4 = 'You are an expert Python programmer, and here is your task: Write a function to find the largest integers from a given list of numbers using heap queue algorithm. Your code should pass these tests:\n\nassert heap_queue_largest( [25, 35, 22, 85, 14, 65, 75, 22, 58],3)==[85, 75, 65] \nassert heap_queue_largest( [25, 35, 22, 85, 14, 65, 75, 22, 58],2)==[85, 75]\nassert heap_queue_largest( [25, 35, 22, 85, 14, 65, 75, 22, 58],5)==[85, 75, 65, 58, 35]\n[BEGIN]\nimport heapq as hq\r\ndef heap_queue_largest(nums,n):\r\n  largest_nums = hq.nlargest(n, nums)\r\n  return largest_nums\n[DONE]'
-            task = f"You are an expert Python programmer, and here is your task: {row['content']} Your code should pass these tests:\n\n{row['test_list'][0]}\n{row['test_list'][1]}\n[BEGIN]\n"
-            prompt = task_id_2 + '\n' + task_id_3 + '\n' + task_id_4 + '\n' + task
-        else:
-            tests = '\n'.join(row['test_list'])
-            prompt = f"You are an expert Python programmer, and here is your task: {row['content']} Your code should pass these tests:\n\n{tests}"
-
-        return Prompt(id=row['id'], prompt=prompt, labels=row['labels'])
+        tests = ensure_json(row, 'test')
+        test = '\n'.join(tests[:1])
+        prompt = f"{row['content']} Your code should satisfy these tests:\n\n{test}"
+        return Prompt(id=row['id'], prompt=prompt, labels=ensure_json(row, 'labels'))
 
     @classmethod
     async def evaluate_single(cls, request: SubmitRequest) -> EvalResult:
         row = await get_row_by_id_in_table(request,
                                            cls.get_table_name(request.dataset),
-                                           columns=['id', 'content', 'labels', 'test_list'])
+                                           columns=['id', 'content', 'test', 'labels'])
         ensure_json(row, 'labels')
-        ensure_json(row, 'test_list')
+        tests = ensure_json(row, 'test')
+        test = '\n'.join(tests)
 
-        text = request.completion
-        completion = postprocess_completion(text)
-        code = '\n'.join([row['labels']['test_setup_code'], completion])
-        if 'if __name__ ==' in code:
-            code = code[:code.index('if __name__ ==')]
-
-        is_fewshot_task = request.config.is_fewshot
-        full_code = code
-        if is_fewshot_task:
-            full_code += '\n' + row['test_list'][-1] + '\n'
-        else:
-            for test in row['test_list']:
-                full_code += '\n' + test + '\n'
+        code = default_extract_helper(request.completion, 'python', request.config.custom_extract_logic)
+        full_code = f"{code}\n{row['labels']['test_setup_code']}\n{test}"
 
         result = await run_code_in_sandbox(
             RunCodeRequest(
