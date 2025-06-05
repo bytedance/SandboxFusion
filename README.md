@@ -68,7 +68,7 @@ Build the image locally:
 docker build -f ./scripts/Dockerfile.base -t code_sandbox:base .
 # change the base image in Dockerfile.server
 sed -i '1s/.*/FROM code_sandbox:base/' ./scripts/Dockerfile.server
-docker build -f ./scripts/Dockerfile.server -t code_sandbox:server
+docker build -f ./scripts/Dockerfile.server -t code_sandbox:server .
 docker run -d --rm --privileged -p 8080:8080 code_sandbox:server make run-online
 ```
 
