@@ -56,7 +56,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # R, lua, ruby, julia, perl, scala
 RUN apt-get install -y r-base lua5.2 luarocks ruby-full julia scala \
     && luarocks install luaunit \
-    && PERL_MM_USE_DEFAULT=1 cpan Test::Deep Data::Compare
+    && PERL_MM_USE_DEFAULT=1 cpan Test::Deep Data::Compare \
+    && rm -fr /root/.cpan/*
 
 # D
 RUN wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
