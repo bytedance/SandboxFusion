@@ -35,8 +35,10 @@ async def lifespan(app: FastAPI):
     datalake, sqlite = await get_databases()
     logger.info(f'database initialized')
     yield
-    await datalake.disconnect()
-    await sqlite.disconnect()
+    if datalake is not None:
+        await datalake.disconnect()
+    if sqlite is not None:
+        await sqlite.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)
