@@ -141,9 +141,9 @@ async def run_go(args: CodeRunArgs) -> CodeRunResult:
 async def run_java(args: CodeRunArgs) -> CodeRunResult:
     with tempfile.TemporaryDirectory(dir=get_tmp_dir(), ignore_cleanup_errors=True) as tmp_dir:
         deps_dir = os.path.abspath(os.path.join(__file__, '../../../runtime/java'))
-        shutil.copy2(os.path.join(deps_dir, 'javatuples-1.2.jar'), tmp_dir)
+        shutil.copytree(os.path.join(deps_dir), tmp_dir, dirs_exist_ok=True)
         restore_files(tmp_dir, args.files)
-        jars = ['.', 'javatuples-1.2.jar'] + [filename for filename in args.files.keys() if filename.endswith('.jar')]
+        jars = ['.', 'javatuples-1.2.jar','lib/*'] + [filename for filename in args.files.keys() if filename.endswith('.jar')]
         cpargs = f'-cp {":".join(jars)}'
         fn = os.path.join(tmp_dir, 'Main.java')
         with open(fn, 'w') as f:
@@ -154,12 +154,10 @@ async def run_java(args: CodeRunArgs) -> CodeRunResult:
 
 async def run_junit(args: CodeRunArgs) -> CodeRunResult:
     junit_jar = 'junit-platform-console-standalone-1.8.2.jar'
-    deps = ['junit-jupiter-api-5.11.0-javadoc.jar']
+    deps = ['junit-jupiter-api-5.11.0-javadoc.jar', 'lib/*']
     with tempfile.TemporaryDirectory(dir=get_tmp_dir(), ignore_cleanup_errors=True) as tmp_dir:
         deps_dir = os.path.abspath(os.path.join(__file__, '../../../runtime/java'))
-        for dep in deps:
-            shutil.copy2(os.path.join(deps_dir, dep), tmp_dir)
-        shutil.copy2(os.path.join(deps_dir, junit_jar), tmp_dir)
+        shutil.copytree(os.path.join(deps_dir), tmp_dir, dirs_exist_ok=True)
         restore_files(tmp_dir, args.files)
         jars = ['.', junit_jar] + deps + [filename for filename in args.files.keys() if filename.endswith('.jar')]
         cpargs = f'{":".join(jars)}'
