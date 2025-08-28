@@ -223,7 +223,7 @@ async def run_rust(args: CodeRunArgs) -> CodeRunResult:
         with tempfile.NamedTemporaryFile(mode='w', dir=tmp_dir, suffix='.rs', delete=False) as f:
             f.write(args.code)
 
-        return await run_commands(f'rustc {f.name} -o test', './test', tmp_dir, {}, args)
+        return await run_commands(f'rustc --test {f.name} -o test', './test', tmp_dir, {}, args)
 
 
 async def run_bash(args: CodeRunArgs) -> CodeRunResult:
