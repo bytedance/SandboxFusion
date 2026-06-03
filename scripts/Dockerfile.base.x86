@@ -1,0 +1,145 @@
+FROM ubuntu:focal-20231211
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y curl npm git nano wget vim unzip sudo cgroup-tools iproute2 iptables \
+    # iverilog build deps
+    autoconf gperf flex bison \
+    # bash scripting utils
+    bc \
+    && mkdir -p /workspace/download \
+    && rm -rf /var/lib/apt/lists/*
+
+# python 3.11 & poetry
+# Install conda
+RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-py311_23.5.2-0-Linux-x86_64.sh -O miniconda.sh && \
+    bash miniconda.sh -b -p /root/miniconda3 && \
+    rm miniconda.sh
+RUN mkdir -p /root/.conda
+# Add conda to PATH
+ENV PATH="/root/miniconda3/bin:${PATH}"
+RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.7.0 python3 -
+ENV PATH=/root/.local/bin:$PATH
+
+# Install Go 1.23.3 for x86_64
+RUN curl -o /workspace/download/go.tar.gz -SL https://go.dev/dl/go1.23.3.linux-amd64.tar.gz \
+    && tar -zxf /workspace/download/go.tar.gz -C /usr/local \
+    && rm /workspace/download/go.tar.gz
+# Add Go to PATH
+ENV PATH=/usr/local/go/bin:$PATH
+
+# Install Node.js 20.11.0 for x86_64
+RUN curl -o /workspace/download/node.tar.gz -SL https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz \
+    && mkdir -p /usr/local/lib/nodejs \
+    && tar -zxf /workspace/download/node.tar.gz -C /usr/local/lib/nodejs \
+    && mv /usr/local/lib/nodejs/node-v20.11.0-linux-x64 /usr/local/lib/nodejs/node \
+    && rm /workspace/download/node.tar.gz
+# Add Node.js to PATH
+ENV PATH=/usr/local/lib/nodejs/node/bin:$PATH
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Install global npm packages
+RUN npm install -g typescript@5.3.3 tsx@4.7.1
+
+# Install GCC 9, Boost, and build tools
+RUN apt-get update && apt-get install -y \
+    build-essential g++ libboost-all-dev wget curl \
+    && rm -rf /var/lib/apt/lists/*
+# Build and install OpenSSL 3.0.11 for x86_64
+RUN curl -o /workspace/download/openssl.tar.gz -SL https://www.openssl.org/source/old/3.0/openssl-3.0.11.tar.gz \
+    && tar -zxf /workspace/download/openssl.tar.gz \
+    && cd openssl-3.0.11 \
+    && ./Configure linux-x86_64 --prefix=/usr/local --openssldir=/usr/local/openssl \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf openssl-3.0.11 /workspace/download/openssl.tar.gz
+# Ensure OpenSSL binaries are in PATH
+ENV PATH=/usr/local/bin:$PATH
+
+# Install JDK 21 for x86_64
+RUN curl -o /workspace/download/jdk.tar.gz -SL https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz \
+    && mkdir -p /usr/java \
+    && tar -zxf /workspace/download/jdk.tar.gz -C /usr/java \
+    && rm /workspace/download/jdk.tar.gz
+# Detect extracted JDK folder and set JAVA_HOME
+RUN JAVA_DIR=$(ls /usr/java) && \
+    echo "export JAVA_HOME=/usr/java/$JAVA_DIR" >> /etc/profile.d/java.sh && \
+    echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> /etc/profile.d/java.sh
+# Ensure the environment variables are available
+ENV JAVA_HOME=/usr/java/jdk-21
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Install .NET 8.0 SDK (x86_64)
+RUN mkdir -p /usr/local/share/dotnet && \
+    curl -SL https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.415/dotnet-sdk-8.0.415-linux-x64.tar.gz -o dotnet-sdk.tar.gz && \
+    tar -zxf dotnet-sdk.tar.gz -C /usr/local/share/dotnet && \
+    rm dotnet-sdk.tar.gz
+# Add .NET to PATH
+ENV DOTNET_ROOT=/usr/local/share/dotnet
+ENV PATH=$PATH:/usr/local/share/dotnet
+
+# php 7.4.3
+RUN apt-get update && apt-get install -y php-cli=2:7.4+75 \
+    && rm -rf /var/lib/apt/lists/*
+
+# rust
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.76.0
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# R, lua, ruby, julia, perl, scala
+RUN apt-get update && apt-get install -y r-base lua5.2 luarocks ruby-full julia scala build-essential curl \
+    && luarocks install luaunit \
+    && curl -L https://cpanmin.us | perl - App::cpanminus \
+    && cpanm --notest Test::Deep Data::Compare \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install D compiler and DUB
+# RUN wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
+#     && apt-get update --allow-insecure-repositories -y \
+#     && apt-get -y --allow-unauthenticated install --reinstall d-apt-keyring \
+#     && apt-get update \
+#     && apt-get install -y dmd-compiler dub
+
+# Install Kotlin 2.0.0 compiler
+RUN curl -o /tmp/kotlin-compiler.zip -SL https://github.com/JetBrains/kotlin/releases/download/v2.0.0/kotlin-compiler-2.0.0.zip \
+    && mkdir -p /usr/local/kotlin \
+    && unzip /tmp/kotlin-compiler.zip -d /usr/local/kotlin \
+    && rm -f /tmp/kotlin-compiler.zip
+# Add Kotlin compiler to PATH
+ENV PATH=/usr/local/kotlin/kotlinc/bin:$PATH
+
+# iverilog && verilog-eval (TODO: remove verilog-eval)
+RUN cd /workspace \
+    && git clone https://github.com/steveicarus/iverilog.git && cd iverilog \
+    && git checkout 01441687235135d1c12eeef920f75d97995da333 \
+    && sh ./autoconf.sh && ./configure && make -j4 \
+    && make install \
+    && cd /workspace \
+    && git clone https://github.com/NVlabs/verilog-eval \
+    && cd verilog-eval && git checkout 4b9b16e92f1d9cc520afbfa3ecd5a2f20a350fd5 \
+    && sed -i '79d;112d' ./verilog_eval/execution.py \
+    && cd ../ && pip install -e verilog-eval
+
+# lean 4
+RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain leanprover/lean4:v4.10.0-rc2
+ENV PATH=/root/.elan/bin:$PATH
+
+# Racket
+RUN apt-get update --allow-insecure-repositories -y && apt-get install -y racket \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Swift 5.10.1 (x86_64)
+# RUN curl -o /workspace/download/swift.tar.gz -SL https://download.swift.org/swift-5.10.1-release/ubuntu2004/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu20.04.tar.gz \
+#     && cd /workspace/download \
+#     && tar zxf swift.tar.gz \
+#     && mkdir /usr/local/swift \
+#     && mv swift-5.10.1-RELEASE-ubuntu20.04/usr/* /usr/local/swift \
+#     && rm -f /workspace/download/swift.tar.gz            
+# ENV PATH=/usr/local/swift/bin:$PATH
+
+# Register Java alternatives and clean up
+RUN sh -c '. /etc/profile.d/java.sh \
+    && update-alternatives --install /usr/bin/java java $JAVA_HOME/bin/java 20000 \
+    && update-alternatives --install /usr/bin/javac javac $JAVA_HOME/bin/javac 20000 \
+    && rm -r /workspace/download \
+    && env'
