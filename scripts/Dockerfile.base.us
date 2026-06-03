@@ -9,42 +9,72 @@ RUN apt-get update && apt-get install -y curl npm git nano wget vim unzip sudo c
     && mkdir -p /workspace/download
 
 # python 3.11 & poetry
-COPY ./scripts/install-miniconda.sh ./scripts/install-miniconda.sh
-RUN bash ./scripts/install-miniconda.sh 3.11 us
+# Install conda
+RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-py311_23.5.2-0-Linux-aarch64.sh -O miniconda.sh && \
+    bash miniconda.sh -b -p /root/miniconda3 && \
+    rm miniconda.sh
+RUN mkdir -p /root/.conda
+# Add conda to PATH
 ENV PATH="/root/miniconda3/bin:${PATH}"
 RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.7.0 python3 -
 ENV PATH=/root/.local/bin:$PATH
 
-# golang 1.23.3
-RUN curl -o /workspace/download/go.tar.gz -SL https://go.dev/dl/go1.23.3.linux-amd64.tar.gz \
-    && tar -zxf /workspace/download/go.tar.gz -C /usr/local && rm /workspace/download/go.tar.gz
-ENV PATH=/bin:/usr/local/go/bin:$PATH
+# Install Go 1.23.3 for ARM64
+RUN curl -o /workspace/download/go.tar.gz -SL https://go.dev/dl/go1.23.3.linux-arm64.tar.gz \
+    && tar -zxf /workspace/download/go.tar.gz -C /usr/local \
+    && rm /workspace/download/go.tar.gz
+# Add Go to PATH
+ENV PATH=/usr/local/go/bin:$PATH
 
-# nodejs 20.11.0
-RUN curl -o /workspace/download/node.tar.gz -SL https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz \
-    && mkdir -p /usr/local/lib/nodejs && tar -zxf /workspace/download/node.tar.gz -C /usr/local/lib/nodejs && mv /usr/local/lib/nodejs/node-v20.11.0-linux-x64 /usr/local/lib/nodejs/node \
+# Install Node.js 20.11.0 for ARM64
+RUN curl -o /workspace/download/node.tar.gz -SL https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-arm64.tar.gz \
+    && mkdir -p /usr/local/lib/nodejs \
+    && tar -zxf /workspace/download/node.tar.gz -C /usr/local/lib/nodejs \
+    && mv /usr/local/lib/nodejs/node-v20.11.0-linux-arm64 /usr/local/lib/nodejs/node \
     && rm /workspace/download/node.tar.gz
+# Add Node.js to PATH
 ENV PATH=/usr/local/lib/nodejs/node/bin:$PATH
 ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Install global npm packages
 RUN npm install -g typescript@5.3.3 tsx@4.7.1
 
-# gcc 9
-RUN apt-get update && apt-get install -y build-essential g++ libboost-all-dev
+# Install GCC 9, Boost, and build tools
+RUN apt-get update && apt-get install -y \
+    build-essential g++ libboost-all-dev wget curl
+# Build and install OpenSSL 3.0.11 for ARM64
 RUN curl -o /workspace/download/openssl.tar.gz -SL https://www.openssl.org/source/old/3.0/openssl-3.0.11.tar.gz \
-    && tar -zxf /workspace/download/openssl.tar.gz && cd openssl-3.0.11 && ./Configure && make && make install \
-    && rm /workspace/download/openssl.tar.gz && cd .. && rm -r openssl-3.0.11
-ENV PATH=/usr/bin/openssl:$PATH
+    && tar -zxf /workspace/download/openssl.tar.gz \
+    && cd openssl-3.0.11 \
+    && ./Configure linux-aarch64 --prefix=/usr/local --openssldir=/usr/local/openssl \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf openssl-3.0.11 /workspace/download/openssl.tar.gz
+# Ensure OpenSSL binaries are in PATH
+ENV PATH=/usr/local/bin:$PATH
 
-# jdk 21
-RUN curl -o /workspace/download/jdk.tar.gz -SL https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz \
-    && mkdir /usr/java && tar -zxf /workspace/download/jdk.tar.gz -C /usr/java && rm /workspace/download/jdk.tar.gz \
-    && java_path=`ls /usr/java/${path}` && echo "export JAVA_HOME=/usr/java/${java_path}" >> ~/.profile
+# Install JDK 21 for ARM64
+RUN curl -o /workspace/download/jdk.tar.gz -SL https://download.oracle.com/java/21/latest/jdk-21_linux-aarch64_bin.tar.gz \
+    && mkdir -p /usr/java \
+    && tar -zxf /workspace/download/jdk.tar.gz -C /usr/java \
+    && rm /workspace/download/jdk.tar.gz
+# Detect extracted JDK folder and set JAVA_HOME
+RUN JAVA_DIR=$(ls /usr/java) && \
+    echo "export JAVA_HOME=/usr/java/$JAVA_DIR" >> /etc/profile.d/java.sh && \
+    echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> /etc/profile.d/java.sh
+# Ensure the environment variables are available
+ENV JAVA_HOME=/usr/java/jdk-21
+ENV PATH=$JAVA_HOME/bin:$PATH
 
-# dotnet 8.0
-RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y dotnet-sdk-8.0
+# Install .NET 8.0 SDK (ARM64)
+RUN mkdir -p /usr/local/share/dotnet && \
+    curl -SL https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.415/dotnet-sdk-8.0.415-linux-arm64.tar.gz -o dotnet-sdk.tar.gz && \
+    tar -zxf dotnet-sdk.tar.gz -C /usr/local/share/dotnet && \
+    rm dotnet-sdk.tar.gz
+# Add .NET to PATH
+ENV DOTNET_ROOT=/usr/local/share/dotnet
+ENV PATH=$PATH:/usr/local/share/dotnet
 
 # php 7.4.3
 RUN apt-get install -y php-cli=2:7.4+75
@@ -54,20 +84,24 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.76.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # R, lua, ruby, julia, perl, scala
-RUN apt-get install -y r-base lua5.2 luarocks ruby-full julia scala \
+RUN apt-get update && apt-get install -y r-base lua5.2 luarocks ruby-full julia scala build-essential curl \
     && luarocks install luaunit \
-    && PERL_MM_USE_DEFAULT=1 cpan Test::Deep Data::Compare
+    && curl -L https://cpanmin.us | perl - App::cpanminus \
+    && cpanm --notest Test::Deep Data::Compare
 
-# D
-RUN wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
-    && apt-get update --allow-insecure-repositories -y \
-    && apt-get -y --allow-unauthenticated install --reinstall d-apt-keyring \
-    && apt-get update && apt-get install -y dmd-compiler dub
+# Install D compiler and DUB
+# RUN wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
+#     && apt-get update --allow-insecure-repositories -y \
+#     && apt-get -y --allow-unauthenticated install --reinstall d-apt-keyring \
+#     && apt-get update \
+#     && apt-get install -y dmd-compiler dub
 
-# kotlin
+# Install Kotlin 2.0.0 compiler
 RUN curl -o /tmp/kotlin-compiler.zip -SL https://github.com/JetBrains/kotlin/releases/download/v2.0.0/kotlin-compiler-2.0.0.zip \
-    && mkdir /usr/local/kotlin && unzip /tmp/kotlin-compiler.zip -d /usr/local/kotlin \
+    && mkdir -p /usr/local/kotlin \
+    && unzip /tmp/kotlin-compiler.zip -d /usr/local/kotlin \
     && rm -f /tmp/kotlin-compiler.zip
+# Add Kotlin compiler to PATH
 ENV PATH=/usr/local/kotlin/kotlinc/bin:$PATH
 
 # iverilog && verilog-eval (TODO: remove verilog-eval)
@@ -89,17 +123,17 @@ ENV PATH=/root/.elan/bin:$PATH
 # Racket
 RUN apt-get update --allow-insecure-repositories -y && apt-get install -y racket
 
-# Swift
-RUN curl -o /workspace/download/swift.tar.gz -SL https://download.swift.org/swift-5.10.1-release/ubuntu2004/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu20.04.tar.gz \
-    && cd /workspace/download \
-    && tar zxf swift.tar.gz \
-    && mkdir /usr/local/swift \
-    && mv swift-5.10.1-RELEASE-ubuntu20.04/usr/* /usr/local/swift \
-    && rm -f /workspace/download/swift.tar.gz
-ENV PATH=/usr/local/swift/bin:$PATH
+# Install Swift 5.10.1 (ARM64) 
+# RUN curl -o /workspace/download/swift.tar.gz -SL https://github.com/futurejones/swift-arm64/releases/download/ubuntu-24.04-release/swiftlang-5.10-ubuntu-24.04-release-amd64-01.tar.gz \
+#     && mkdir -p /usr/local/swift \
+#     && tar -zxf /workspace/download/swift.tar.gz -C /usr/local/swift --strip-components=1 \
+#     && rm -f /workspace/download/swift.tar.gz
+# # Add Swift to PATH
+# ENV PATH=/usr/local/swift/bin:$PATH
 
-SHELL ["sh", "-lc"]
-RUN update-alternatives --install /usr/bin/java java $JAVA_HOME/bin/java 20000 \
+# Register Java alternatives and clean up
+RUN sh -c '. /etc/profile.d/java.sh \
+    && update-alternatives --install /usr/bin/java java $JAVA_HOME/bin/java 20000 \
     && update-alternatives --install /usr/bin/javac javac $JAVA_HOME/bin/javac 20000 \
     && rm -r /workspace/download \
-    && env
+    && env'

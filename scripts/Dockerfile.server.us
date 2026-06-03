@@ -1,4 +1,32 @@
-FROM volcengine/sandbox-fusion:base-20250609
+FROM code_sandbox:base
+
+RUN apt-get update && apt-get install -y \
+    qt5-qmake \
+    qtbase5-dev \
+    qtbase5-dev-tools \
+    libqt5gui5 \
+    libqt5widgets5 \
+    libqt5core5a \
+    libqt5dbus5 \
+    build-essential \
+    libgmp-dev \
+    libmpfr-dev \
+    libmpc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# prepare for the conda
+RUN pip install --upgrade pip setuptools wheel
+
+# Install PyQt5 and your other dependencies inside the conda environment
+COPY ./runtime/python ./runtime/python
+RUN conda create -n sandbox-runtime -y python=3.11
+RUN /bin/bash -c "source activate sandbox-runtime && \
+    pip install PyQt5==5.15.10 --config-settings --confirm-license= --verbose"
+RUN /bin/bash -c "source activate sandbox-runtime && \
+    pip install -r ./runtime/python/requirements.txt --ignore-requires-python && \
+    python -c 'import nltk; nltk.download(\"punkt\")' && \
+    python -c 'import nltk; nltk.download(\"stopwords\")' \
+"
 
 COPY ./runtime/go ./runtime/go
 # download and cache go deps
@@ -17,8 +45,9 @@ RUN dotnet new console -o /tmp/dotnet && dotnet run --project /tmp/dotnet
 COPY ./runtime/lean /root/sandbox/runtime/lean
 RUN cd /root/sandbox/runtime/lean && lake build
 
-COPY ./runtime/python ./runtime/python
-RUN cd ./runtime/python && bash install-python-runtime.sh us
+# python
+# COPY ./runtime/python ./runtime/python
+# RUN cd ./runtime/python && bash install-python-runtime.sh us
 # fix pyqt error, see https://github.com/NVlabs/instant-ngp/discussions/300
 ENV QT_QPA_PLATFORM=offscreen
 ENV OMP_NUM_THREADS=2
