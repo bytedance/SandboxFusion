@@ -1,110 +1,152 @@
-FROM vemlp-cn-beijing.cr.volces.com/preset-images/mirror:ubuntu-focal-20231211
+# Unified multi-arch base image for the code sandbox.
+# Builds for linux/amd64 and linux/arm64 from a single source via $TARGETARCH.
+#
+# Optional build-args (default to official upstream sources):
+#   APT_MIRROR     e.g. mirrors.tuna.tsinghua.edu.cn   (rewrites apt sources)
+#   PIP_INDEX_URL  e.g. https://mirrors.aliyun.com/pypi/simple/
+#   GOPROXY        e.g. https://goproxy.cn|direct
+FROM ubuntu:focal-20231211
 
-COPY ./scripts/tuna-apt.sh ./scripts/tuna-apt.sh
+ARG TARGETARCH
+ARG APT_MIRROR=""
+ARG PIP_INDEX_URL=""
+ARG GOPROXY="direct"
 ENV DEBIAN_FRONTEND=noninteractive
-RUN bash ./scripts/tuna-apt.sh 20.04 \
-    && apt-get update && apt-get install -y curl npm git nano wget vim unzip sudo cgroup-tools iproute2 iptables \
-    # iverilog build deps
-    autoconf gperf flex bison \
-    # bash scripting utils
-    bc \
-    && mkdir -p /workspace/download
 
-# python 3.11 & poetry
-COPY ./scripts/install-miniconda.sh ./scripts/install-miniconda.sh
-RUN bash ./scripts/install-miniconda.sh 3.11
-ENV PATH="/root/miniconda3/bin:${PATH}"
-RUN wget https://veml.tos-cn-beijing.volces.com/condarc -O ~/.condarc && \
-    pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
-RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.7.0 python3 -
-ENV PATH=/root/.local/bin:$PATH
+# Optionally repoint apt at a regional mirror, then install base utils, the C/C++
+# toolchain (kept at runtime — the sandbox compiles user code) and build deps.
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|http://archive.ubuntu.com|https://$APT_MIRROR|g; s|http://security.ubuntu.com|https://$APT_MIRROR|g" /etc/apt/sources.list; \
+    fi \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget git nano vim unzip sudo \
+        cgroup-tools iproute2 iptables \
+        build-essential g++ libboost-all-dev \
+        autoconf gperf flex bison \
+        bc npm \
+    && mkdir -p /workspace/download \
+    && rm -rf /var/lib/apt/lists/*
+
+# python 3.11 (miniconda) & poetry
+ENV PATH="/root/miniconda3/bin:/root/.local/bin:${PATH}"
+RUN case "$TARGETARCH" in \
+        amd64) CONDA_ARCH=x86_64 ;; \
+        arm64) CONDA_ARCH=aarch64 ;; \
+        *) echo "unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
+    esac \
+    && wget -q "https://repo.anaconda.com/miniconda/Miniconda3-py311_23.5.2-0-Linux-${CONDA_ARCH}.sh" -O /tmp/miniconda.sh \
+    && bash /tmp/miniconda.sh -b -p /root/miniconda3 \
+    && rm -f /tmp/miniconda.sh && mkdir -p /root/.conda \
+    && if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX_URL"; fi \
+    && curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.7.0 python3 - \
+    && conda clean -afy && pip cache purge && rm -rf /root/.cache
 
 # golang 1.23.3
-RUN curl -o /workspace/download/go.tar.gz -SL https://go.dev/dl/go1.23.3.linux-amd64.tar.gz \
-    && tar -zxf /workspace/download/go.tar.gz -C /usr/local && rm /workspace/download/go.tar.gz
-ENV PATH=/bin:/usr/local/go/bin:$PATH
+ENV PATH=/usr/local/go/bin:$PATH
+ENV GOPROXY=$GOPROXY
+RUN curl -fsSL "https://go.dev/dl/go1.23.3.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 
-# nodejs 20.11.0
-RUN curl -o /workspace/download/node.tar.gz -SL https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz \
-    && mkdir -p /usr/local/lib/nodejs && tar -zxf /workspace/download/node.tar.gz -C /usr/local/lib/nodejs && mv /usr/local/lib/nodejs/node-v20.11.0-linux-x64 /usr/local/lib/nodejs/node \
-    && rm /workspace/download/node.tar.gz
+# nodejs 20.11.0 + global TypeScript tooling
 ENV PATH=/usr/local/lib/nodejs/node/bin:$PATH
 ENV NODE_PATH=/usr/local/lib/node_modules
-RUN npm install -g typescript@5.3.3 tsx@4.7.1
+RUN case "$TARGETARCH" in amd64) NODE_ARCH=x64 ;; arm64) NODE_ARCH=arm64 ;; esac \
+    && mkdir -p /usr/local/lib/nodejs \
+    && curl -fsSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-${NODE_ARCH}.tar.gz" -o /tmp/node.tar.gz \
+    && tar -xzf /tmp/node.tar.gz -C /usr/local/lib/nodejs \
+    && mv "/usr/local/lib/nodejs/node-v20.11.0-linux-${NODE_ARCH}" /usr/local/lib/nodejs/node \
+    && rm /tmp/node.tar.gz \
+    && npm install -g typescript@5.3.3 tsx@4.7.1 \
+    && npm cache clean --force
 
-# gcc 9
-RUN apt-get update && apt-get install -y build-essential g++ libboost-all-dev
-
-RUN curl -o /workspace/download/openssl.tar.gz -SL https://www.openssl.org/source/old/3.0/openssl-3.0.11.tar.gz \
-    && tar -zxf /workspace/download/openssl.tar.gz && cd openssl-3.0.11 && ./Configure && make && make install \
-    && rm /workspace/download/openssl.tar.gz && cd .. && rm -r openssl-3.0.11
-ENV PATH=/usr/bin/openssl:$PATH
+# openssl 3.0.11 (built from source; ./config autodetects the arch)
+ENV PATH=/usr/local/bin:$PATH
+RUN curl -fsSL https://www.openssl.org/source/old/3.0/openssl-3.0.11.tar.gz -o /tmp/openssl.tar.gz \
+    && tar -xzf /tmp/openssl.tar.gz -C /tmp && cd /tmp/openssl-3.0.11 \
+    && ./config --prefix=/usr/local --openssldir=/usr/local/openssl \
+    && make -j"$(nproc)" && make install_sw && ldconfig \
+    && cd / && rm -rf /tmp/openssl-3.0.11 /tmp/openssl.tar.gz
 
 # jdk 21
-RUN curl -o /workspace/download/jdk.tar.gz -SL https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz \
-    && mkdir /usr/java && tar -zxf /workspace/download/jdk.tar.gz -C /usr/java && rm /workspace/download/jdk.tar.gz \
-    && java_path=`ls /usr/java/${path}` && echo "export JAVA_HOME=/usr/java/${java_path}" >> ~/.profile
+ENV JAVA_HOME=/usr/java/jdk-21
+ENV PATH=$JAVA_HOME/bin:$PATH
+RUN case "$TARGETARCH" in amd64) JDK_ARCH=x64 ;; arm64) JDK_ARCH=aarch64 ;; esac \
+    && curl -fsSL "https://download.oracle.com/java/21/latest/jdk-21_linux-${JDK_ARCH}_bin.tar.gz" -o /tmp/jdk.tar.gz \
+    && mkdir -p /usr/java && tar -xzf /tmp/jdk.tar.gz -C /usr/java && rm /tmp/jdk.tar.gz \
+    && ln -s "/usr/java/$(ls /usr/java | grep '^jdk-')" /usr/java/jdk-21
 
-# dotnet 8.0
-RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y dotnet-sdk-8.0
+# dotnet 8.0 (SDK tarball — same install path on both arches)
+ENV DOTNET_ROOT=/usr/local/share/dotnet
+ENV PATH=$PATH:/usr/local/share/dotnet
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+RUN case "$TARGETARCH" in amd64) DOTNET_ARCH=x64 ;; arm64) DOTNET_ARCH=arm64 ;; esac \
+    && mkdir -p /usr/local/share/dotnet \
+    && curl -fsSL "https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.415/dotnet-sdk-8.0.415-linux-${DOTNET_ARCH}.tar.gz" -o /tmp/dotnet.tar.gz \
+    && tar -xzf /tmp/dotnet.tar.gz -C /usr/local/share/dotnet && rm /tmp/dotnet.tar.gz
 
 # php 7.4.3
-RUN apt-get install -y php-cli=2:7.4+75
+RUN apt-get update && apt-get install -y --no-install-recommends php-cli=2:7.4+75 \
+    && rm -rf /var/lib/apt/lists/*
 
-# rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.76.0
+# rust 1.76.0 (minimal profile)
 ENV PATH="/root/.cargo/bin:${PATH}"
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.76.0 --profile minimal \
+    && rm -rf /root/.cargo/registry
 
-# R, lua, ruby, julia, perl, scala
-RUN apt-get install -y r-base lua5.2 luarocks ruby-full julia scala \
+# R, lua, ruby, julia, scala, perl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        r-base lua5.2 luarocks ruby-full julia scala \
     && luarocks install luaunit \
-    && PERL_MM_USE_DEFAULT=1 cpan Test::Deep Data::Compare
+    && curl -L https://cpanmin.us | perl - App::cpanminus \
+    && cpanm --notest Test::Deep Data::Compare \
+    && rm -rf /var/lib/apt/lists/* /root/.cpanm
 
-# D
-RUN wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
-    && apt-get update --allow-insecure-repositories -y \
-    && apt-get -y --allow-unauthenticated install --reinstall d-apt-keyring \
-    && apt-get update && apt-get install -y dmd-compiler dub
+# D (dmd/dub) — amd64 only (no upstream arm64 build for focal)
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        wget https://netcologne.dl.sourceforge.net/project/d-apt/files/d-apt.list -O /etc/apt/sources.list.d/d-apt.list \
+        && apt-get update --allow-insecure-repositories -y \
+        && apt-get -y --allow-unauthenticated install --reinstall d-apt-keyring \
+        && apt-get update && apt-get install -y --no-install-recommends dmd-compiler dub \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# kotlin
-RUN curl -o /tmp/kotlin-compiler.zip -SL https://github.com/JetBrains/kotlin/releases/download/v2.0.0/kotlin-compiler-2.0.0.zip \
-    && mkdir /usr/local/kotlin && unzip /tmp/kotlin-compiler.zip -d /usr/local/kotlin \
-    && rm -f /tmp/kotlin-compiler.zip
+# kotlin 2.0.0 (arch-independent)
 ENV PATH=/usr/local/kotlin/kotlinc/bin:$PATH
+RUN curl -fsSL https://github.com/JetBrains/kotlin/releases/download/v2.0.0/kotlin-compiler-2.0.0.zip -o /tmp/kotlin.zip \
+    && mkdir -p /usr/local/kotlin && unzip -q /tmp/kotlin.zip -d /usr/local/kotlin \
+    && rm -f /tmp/kotlin.zip
 
 # iverilog && verilog-eval (TODO: remove verilog-eval)
 RUN cd /workspace \
     && git clone https://github.com/steveicarus/iverilog.git && cd iverilog \
     && git checkout 01441687235135d1c12eeef920f75d97995da333 \
-    && sh ./autoconf.sh && ./configure && make -j4 \
-    && make install \
-    && cd /workspace \
+    && sh ./autoconf.sh && ./configure && make -j"$(nproc)" && make install \
+    && cd /workspace && rm -rf iverilog \
     && git clone https://github.com/NVlabs/verilog-eval \
     && cd verilog-eval && git checkout 4b9b16e92f1d9cc520afbfa3ecd5a2f20a350fd5 \
     && sed -i '79d;112d' ./verilog_eval/execution.py \
-    && cd ../ && pip install -e verilog-eval
+    && cd .. && pip install -e verilog-eval && pip cache purge && rm -rf /root/.cache
 
 # lean 4
-RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain leanprover/lean4:v4.10.0-rc2
 ENV PATH=/root/.elan/bin:$PATH
+RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
+    | sh -s -- -y --default-toolchain leanprover/lean4:v4.10.0-rc2
 
-# Racket
-RUN apt-get update --allow-insecure-repositories -y && apt-get install -y racket
+# racket
+RUN apt-get update --allow-insecure-repositories -y \
+    && apt-get install -y --no-install-recommends racket \
+    && rm -rf /var/lib/apt/lists/*
 
-# Swift
-RUN curl -o /workspace/download/swift.tar.gz -SL https://download.swift.org/swift-5.10.1-release/ubuntu2004/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu20.04.tar.gz \
-    && cd /workspace/download \
-    && tar zxf swift.tar.gz \
-    && mkdir /usr/local/swift \
-    && mv swift-5.10.1-RELEASE-ubuntu20.04/usr/* /usr/local/swift \
-    && rm -f /workspace/download/swift.tar.gz            
+# swift 5.10.1 — amd64 only (no official arm64 ubuntu20.04 build)
 ENV PATH=/usr/local/swift/bin:$PATH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        curl -fsSL https://download.swift.org/swift-5.10.1-release/ubuntu2004/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu20.04.tar.gz -o /tmp/swift.tar.gz \
+        && tar -xzf /tmp/swift.tar.gz -C /tmp && mkdir -p /usr/local/swift \
+        && mv /tmp/swift-5.10.1-RELEASE-ubuntu20.04/usr/* /usr/local/swift \
+        && rm -rf /tmp/swift.tar.gz /tmp/swift-5.10.1-RELEASE-ubuntu20.04; \
+    fi
 
-SHELL ["sh", "-lc"]
-RUN update-alternatives --install /usr/bin/java java $JAVA_HOME/bin/java 20000 \
-    && update-alternatives --install /usr/bin/javac javac $JAVA_HOME/bin/javac 20000 \
-    && rm -r /workspace/download \
-    && env
+# register java alternatives & final cleanup
+RUN update-alternatives --install /usr/bin/java java "$JAVA_HOME/bin/java" 20000 \
+    && update-alternatives --install /usr/bin/javac javac "$JAVA_HOME/bin/javac" 20000 \
+    && rm -rf /workspace/download /var/lib/apt/lists/* /root/.cache
