@@ -1,11 +1,13 @@
-HOST ?= 0.0.0.0
+.PHONY: run run-dev build-server-image test test-cuda test-minor test-verilog test-verilog-pdb test-online test-case format format-client check
+
+HOST ?= 127.0.0.1
 PORT ?= 8080
 TEST_NP ?= 4
 run:
-	uvicorn sandbox.server.server:app --reload --host $(HOST) --port $(PORT)
-
-run-online:
 	uvicorn sandbox.server.server:app --host $(HOST) --port $(PORT)
+
+run-dev:
+	uvicorn sandbox.server.server:app --reload --host $(HOST) --port $(PORT)
 
 build-server-image:
 	docker build . -f scripts/Dockerfile.server -t sandbox:server

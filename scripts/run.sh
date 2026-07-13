@@ -3,4 +3,5 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$DIR"/..
 
-make run-online HOST="''" PORT=${_BYTEFAAS_RUNTIME_PORT:-8080}
+HOST=${HOST:-127.0.0.1}
+make run HOST="${HOST}" PORT=${_BYTEFAAS_RUNTIME_PORT:-8080}
