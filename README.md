@@ -84,7 +84,8 @@ docker build -f ./scripts/Dockerfile.base -t code_sandbox:base .
 # change the base image in Dockerfile.server
 sed -i '1s/.*/FROM code_sandbox:base/' ./scripts/Dockerfile.server
 docker build -f ./scripts/Dockerfile.server -t code_sandbox:server .
-docker run -d --rm -p 8080:8080 code_sandbox:server make run-online
+# Linux host-network mode keeps the service local-only at 127.0.0.1:8080
+docker run -d --rm --network host code_sandbox:server
 ```
 
 **Manual**
@@ -99,7 +100,15 @@ conda activate sandbox
 poetry install
 # to build the real docs, run `cd docs && npm ci && npm run build`
 mkdir -p docs/build
-make run-online
+make run
+```
+
+By default, the service now binds to `127.0.0.1:8080`.
+
+For local development with hot reload:
+
+```bash
+make run-dev
 ```
 
 Please refer to `scripts/Dockerfile.base` for the runtime of each supported language, and `scripts/Dockerfile.server` for the installation of extra packages for python and nodejs.
