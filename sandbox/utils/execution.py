@@ -55,20 +55,22 @@ def kill_process_tree(pid):
             child.kill()
         parent.kill()
     except Exception as e:
-        logger.warn(f'error on killing process tree: {e}')
-
-
-current_pid = os.getpid()
-root_pid = current_pid
-while True:
-    next_pid = psutil.Process(root_pid).ppid()
-    if next_pid <= 1:
-        break
-    root_pid = next_pid
-
+        logger.warn(f'error on killing process tree: {e}') 
 
 def cleanup_process():
     try:
+        current_pid = os.getpid()
+        root_pid = current_pid
+        while True:
+            try:
+                next_pid = psutil.Process(root_pid).ppid()
+                if next_pid <= 1:
+                    break
+                root_pid = next_pid
+            except psutil.NoSuchProcess:
+                # 如果找不到父进程 (例如已到达沙箱边界)，就此打住
+                logger.warning(f"Could not find parent process for {root_pid}. Stopping tree walk.")
+                break
         child_pids = [p.pid for p in psutil.Process(root_pid).children(recursive=True)]
         for process in psutil.process_iter(['pid', 'name']):
             pid = process.pid
