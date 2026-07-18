@@ -65,8 +65,8 @@ class RunJupyterRequest(BaseModel):
     cell_timeout: float = Field(0, description='max run time for each of the cells')
     total_timeout: float = Field(45, description='max run time for all the cells')
     kernel: Literal['python3'] = 'python3'
-    files: Dict[str, str] = Field({}, description='a dict from file path to base64 encoded file content')
-    fetch_files: List[str] = Field([], description='a list of file paths to fetch after code execution')
+    files: Dict[str, str] = Field(default_factory=dict, description='a dict from file path to base64 encoded file content')
+    fetch_files: List[str] = Field(default_factory=list, description='a list of file paths to fetch after code execution')
 
 
 class CellRunResult(BaseModel):
@@ -118,8 +118,8 @@ class RunCodeRequest(BaseModel):
     code: str = Field(..., examples=['print("hello")'], description='the code to run')
     stdin: Optional[str] = Field(None, examples=[''], description='optional string to pass into stdin')
     language: Language = Field(..., examples=['python'], description='the language or execution mode to run the code')
-    files: Dict[str, Optional[str]] = Field({}, description='a dict from file path to base64 encoded file content')
-    fetch_files: List[str] = Field([], description='a list of file paths to fetch after code execution')
+    files: Dict[str, Optional[str]] = Field(default_factory=dict, description='a dict from file path to base64 encoded file content')
+    fetch_files: List[str] = Field(default_factory=list, description='a list of file paths to fetch after code execution')
 
 
 class RunCodeResponse(BaseModel):
