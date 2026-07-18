@@ -10,7 +10,7 @@ do
 done
 
 rm -f ~/.condarc
-conda create -n sandbox-runtime -y python=3.10
+conda create -n sandbox-runtime -y python=3.11
 
 source activate sandbox-runtime
 
