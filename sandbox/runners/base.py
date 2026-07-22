@@ -15,6 +15,7 @@
 import asyncio
 import base64
 import os
+import signal
 import subprocess
 import time
 import traceback
@@ -29,10 +30,94 @@ from sandbox.configs.run_config import RunConfig
 from sandbox.runners.isolation import tmp_cgroup, tmp_netns, tmp_overlayfs
 from sandbox.runners.types import CodeRunArgs, CodeRunResult, CommandRunResult, CommandRunStatus
 from sandbox.utils.common import set_permissions_recursively
-from sandbox.utils.execution import cleanup_process, ensure_bash_integrity, get_output_non_blocking, kill_process_tree
+from sandbox.utils.execution import cleanup_process, ensure_bash_integrity, kill_process_tree, try_decode
 
 logger = structlog.stdlib.get_logger()
 config = RunConfig.get_instance_sync()
+
+_MAX_CAPTURED_OUTPUT_BYTES = 1024 * 1024
+_OUTPUT_READ_CHUNK_BYTES = 64 * 1024
+_PROCESS_TERMINATION_TIMEOUT = 1.0
+
+
+async def _drain_stream(stream: Optional[asyncio.StreamReader], captured: bytearray) -> None:
+    if stream is None:
+        return
+
+    while chunk := await stream.read(_OUTPUT_READ_CHUNK_BYTES):
+        remaining = _MAX_CAPTURED_OUTPUT_BYTES - len(captured)
+        if remaining > 0:
+            captured.extend(chunk[:remaining])
+
+
+async def _write_stdin(stream: Optional[asyncio.StreamWriter], stdin: Optional[bytes]) -> None:
+    if stream is None:
+        return
+
+    try:
+        if stdin is not None:
+            stream.write(stdin)
+            await stream.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    finally:
+        stream.close()
+
+
+def _terminate_process(process: asyncio.subprocess.Process) -> None:
+    if os.name == 'posix':
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError as e:
+            logger.warning(f'failed to kill process group {process.pid}: {e}')
+
+    if process.returncode is None and psutil.pid_exists(process.pid):
+        try:
+            kill_process_tree(process.pid)
+        except Exception as e:
+            logger.warning(f'failed to kill process tree {process.pid}: {e}')
+
+    if process.returncode is None:
+        try:
+            process.kill()
+        except OSError as e:
+            logger.warning(f'failed to kill process {process.pid}: {e}')
+
+
+async def _terminate_and_reap(process: asyncio.subprocess.Process, tasks: List[asyncio.Task],
+                              execution: asyncio.Future) -> None:
+    current_task = asyncio.current_task()
+    cancellation_requested = bool(current_task and current_task.cancelling())
+    try:
+        _terminate_process(process)
+        try:
+            await asyncio.wait_for(asyncio.shield(execution), timeout=_PROCESS_TERMINATION_TIMEOUT)
+        except asyncio.CancelledError:
+            cancellation_requested = True
+        except Exception:
+            pass
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        cleanup = asyncio.gather(*tasks, return_exceptions=True)
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                cancellation_requested = True
+        cleanup.result()
+        if not execution.done():
+            execution.cancel()
+        try:
+            execution.exception()
+        except asyncio.CancelledError:
+            pass
+
+    if cancellation_requested:
+        raise asyncio.CancelledError
 
 
 async def run_command_bare(command: str | List[str],
@@ -44,6 +129,7 @@ async def run_command_bare(command: str | List[str],
                            preexec_fn=None) -> CommandRunResult:
     try:
         logger.debug(f'running command {command}')
+        stdin_bytes = stdin.encode() if stdin is not None else None
         if use_exec:
             p = await asyncio.create_subprocess_exec(*command,
                                                      stdin=subprocess.PIPE,
@@ -53,6 +139,7 @@ async def run_command_bare(command: str | List[str],
                                                          **os.environ,
                                                          **(extra_env or {})
                                                      },
+                                                     start_new_session=True,
                                                      preexec_fn=preexec_fn)
         else:
             p = await asyncio.create_subprocess_shell(command,
@@ -65,45 +152,51 @@ async def run_command_bare(command: str | List[str],
                                                           **os.environ,
                                                           **(extra_env or {})
                                                       },
+                                                      start_new_session=True,
                                                       preexec_fn=preexec_fn)
-        if stdin is not None:
-            try:
-                if p.stdin:
-                    p.stdin.write(stdin.encode())
-                    p.stdin.flush()
-                else:
-                    logger.warning("Attempted to write to stdin, but stdin is closed.")
-            except Exception as e:
-                logger.exception(f"Failed to write to stdin: {e}")
-        if p.stdin:
-            try:
-                p.stdin.close()
-            except Exception as e:
-                logger.warning(f"Failed to close stdin: {e}")
+        stdout = bytearray()
+        stderr = bytearray()
+        tasks = [
+            asyncio.create_task(_write_stdin(p.stdin, stdin_bytes)),
+            asyncio.create_task(_drain_stream(p.stdout, stdout)),
+            asyncio.create_task(_drain_stream(p.stderr, stderr)),
+            asyncio.create_task(p.wait()),
+        ]
+        execution = asyncio.gather(*tasks)
         start_time = time.time()
+        completed = False
+        timed_out = False
         try:
-            await asyncio.wait_for(p.wait(), timeout=timeout)
+            await asyncio.wait_for(asyncio.shield(execution), timeout=timeout)
+            completed = True
             execution_time = time.time() - start_time
             logger.debug(f'stop running command {command}')
         except asyncio.TimeoutError:
-            return CommandRunResult(status=CommandRunStatus.TimeLimitExceeded,
-                                    execution_time=time.time() - start_time,
-                                    stdout=await get_output_non_blocking(p.stdout),
-                                    stderr=await get_output_non_blocking(p.stderr))
+            timed_out = True
+            execution_time = time.time() - start_time
         finally:
-            if psutil.pid_exists(p.pid):
-                kill_process_tree(p.pid)
-                logger.info(f'process killed: {p.pid}')
-            if config.sandbox.cleanup_process:
-                cleanup_process()
-            if config.sandbox.restore_bash:
-                ensure_bash_integrity()
+            try:
+                if not completed:
+                    await _terminate_and_reap(p, tasks, execution)
+                else:
+                    _terminate_process(p)
+            finally:
+                if config.sandbox.cleanup_process:
+                    cleanup_process()
+                if config.sandbox.restore_bash:
+                    ensure_bash_integrity()
+
+        if timed_out:
+            return CommandRunResult(status=CommandRunStatus.TimeLimitExceeded,
+                                    execution_time=execution_time,
+                                    stdout=try_decode(bytes(stdout)),
+                                    stderr=try_decode(bytes(stderr)))
 
         return CommandRunResult(status=CommandRunStatus.Finished,
                                 execution_time=execution_time,
                                 return_code=p.returncode,
-                                stdout=await get_output_non_blocking(p.stdout),
-                                stderr=await get_output_non_blocking(p.stderr))
+                                stdout=try_decode(bytes(stdout)),
+                                stderr=try_decode(bytes(stderr)))
     except Exception as e:
         message = f'exception on running command {command}: {e} | {traceback.print_tb(e.__traceback__)}'
         logger.warning(message)
