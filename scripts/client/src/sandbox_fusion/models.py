@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, Literal, Optional, List, Any, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
+
 if TYPE_CHECKING:
     from pydantic.v1 import BaseModel, Field
 else:
@@ -46,6 +47,7 @@ class CodeRunArgs(BaseModel):
     run_timeout: float = 10
     stdin: Optional[str] = None
     fetch_files: List[str] = []
+    args: List[str] = []
 
 
 class CodeRunResult(BaseModel):
@@ -120,6 +122,7 @@ class RunCodeRequest(BaseModel):
     language: Language = Field(..., examples=['python'], description='the language or execution mode to run the code')
     files: Dict[str, Optional[str]] = Field({}, description='a dict from file path to base64 encoded file content')
     fetch_files: List[str] = Field([], description='a list of file paths to fetch after code execution')
+    args: List[str] = Field([], description='additional command-line arguments passed to pytest')
 
 
 class RunCodeResponse(BaseModel):

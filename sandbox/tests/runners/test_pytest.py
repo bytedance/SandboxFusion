@@ -12,8 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
+import json
+import shlex
+
 from fastapi.testclient import TestClient
 
+from sandbox.runners.major import run_pytest
+from sandbox.runners.types import CodeRunArgs, CodeRunResult
+from sandbox.server import sandbox_api
 from sandbox.server.sandbox_api import RunCodeRequest, RunCodeResponse, RunStatus
 from sandbox.server.server import app
 
@@ -113,6 +120,56 @@ class Testword_count:
         assert "'this': 1\n'sentence': 1\n'has': 1\n'some': 1\n'punctuation': 1\n'like': 1\n'commas': 1\n'and': 1\n'periods': 1\n" not in captured.out
 '''
 
+selective_code = r'''
+def test_requested():
+    assert True
+
+
+def test_unselected_failure():
+    assert False
+'''
+
+
+def test_pytest_args_forwarded_to_runner(monkeypatch):
+    extra_args = ['-k', 'test_requested', '; touch /tmp/should-not-exist']
+    captured = {}
+
+    async def fake_runner(args):
+        captured['args'] = args.args
+        return CodeRunResult()
+
+    monkeypatch.setitem(sandbox_api.CODE_RUNNERS, 'pytest', fake_runner)
+    request = RunCodeRequest(language='pytest', code=selective_code, args=extra_args)
+    response = client.post('/run_code', json=request.model_dump())
+
+    assert response.status_code == 200
+    assert RunCodeResponse(**response.json()).status == RunStatus.Success
+    assert captured['args'] == extra_args
+
+
+async def test_pytest_args_are_shell_quoted(tmp_path, mocker):
+    extra_args = [
+        '--json-report-file=report with spaces.json',
+        '; touch /tmp/should-not-exist',
+        '$(touch /tmp/also-not)',
+    ]
+    captured = {}
+
+    async def fake_run_commands(compile_command, run_command, cwd, extra_env, args):
+        captured['command'] = run_command
+        return CodeRunResult()
+
+    mocker.patch('sandbox.runners.major.get_tmp_dir', return_value=str(tmp_path))
+    mocker.patch('sandbox.runners.major.get_python_rt_env', return_value={})
+    mocker.patch('sandbox.runners.major.run_commands', side_effect=fake_run_commands)
+
+    await run_pytest(CodeRunArgs(code='def test_ok(): pass', args=extra_args))
+
+    argv = shlex.split(captured['command'])
+    assert argv[0] == 'pytest'
+    assert argv[1].endswith('.py')
+    assert argv[2:] == extra_args
+
 
 def test_pytest_pass():
     request = RunCodeRequest(language='python', code=code, run_timeout=5)
@@ -141,3 +198,18 @@ def test_pytest_fail():
     assert response.status_code == 200
     result = RunCodeResponse(**response.json())
     assert result.status == RunStatus.Failed
+
+
+def test_pytest_args_generate_fetched_report():
+    request = RunCodeRequest(language='pytest',
+                             code=code,
+                             args=['--cov-branch', '--json-report', '--json-report-file=report.json'],
+                             fetch_files=['report.json'],
+                             run_timeout=10)
+    response = client.post('/run_code', json=request.model_dump())
+
+    assert response.status_code == 200
+    result = RunCodeResponse(**response.json())
+    assert result.status == RunStatus.Success
+    report = json.loads(base64.b64decode(result.files['report.json']))
+    assert report['summary']['passed'] == 2

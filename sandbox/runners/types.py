@@ -40,6 +40,7 @@ class CodeRunArgs(BaseModel):
     memory_limit_MB: int = -1
     stdin: Optional[str] = None
     fetch_files: List[str] = []
+    args: List[str] = Field([], description='additional command-line arguments passed to pytest')
 
 
 class CodeRunResult(BaseModel):
