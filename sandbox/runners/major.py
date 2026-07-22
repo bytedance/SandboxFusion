@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -89,7 +90,8 @@ async def run_pytest(args: CodeRunArgs) -> CodeRunResult:
         with tempfile.NamedTemporaryFile(mode='w', dir=tmp_dir, suffix='.py', delete=False) as f:
             f.write(args.code)
 
-        return await run_commands(None, f'pytest {f.name}', tmp_dir, get_python_rt_env('sandbox-runtime'), args)
+        run_command = shlex.join(['pytest', f.name, *args.args])
+        return await run_commands(None, run_command, tmp_dir, get_python_rt_env('sandbox-runtime'), args)
 
 
 async def run_cpp(args: CodeRunArgs) -> CodeRunResult:
