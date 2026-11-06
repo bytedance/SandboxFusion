@@ -25,7 +25,7 @@ online_judge:
   # Maximum concurrency when requesting the sandbox
   max_runner_concurrency: 5
 runner:
-  isolation: none  # Isolation level when running code, none (no isolation) or lite (overlayfs+cgroups+namespace, recommended for use within docker to avoid affecting the host machine)
+  isolation: none  # Isolation level when running code, none (no isolation), lite (overlayfs+cgroups+namespace, recommended for use within docker to avoid affecting the host machine) or foil (foil run --strict, no root needed)
   cleanup_process: false  # Kill all processes unrelated to the sandbox service after each request, use with caution locally
   restore_bash: true  # Check bash binary integrity and attempt to restore after each request
   max_concurrency: 0  # Maximum concurrency, 0 for no limit

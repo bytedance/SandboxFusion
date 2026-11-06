@@ -8,7 +8,7 @@ Files passed through `files` support both absolute and relative paths. Relative 
 
 The file path rules for the `fetch_files` parameter are the same as `files`. For specific usage, refer to the [API Documentation](/docs/api/run-code-run-code-post).
 
-When executing code, the sandbox provides two different isolation modes. Configuration methods can be found [here](/docs/docs/reference/config).
+When executing code, the sandbox provides three different isolation modes. Configuration methods can be found [here](/docs/docs/reference/config).
 
 A general code execution flow:
 
@@ -35,3 +35,15 @@ Light isolation has relatively weaker performance and requires privileged contai
 - Network namespace isolation
 - overlayfs + chroot filesystem isolation
 - PID namespace isolation
+
+### foil
+
+`isolation: foil` runs each command under [foil](https://github.com/ai-agentic-tools/Foil) (`foil run --strict`), as the user the sandbox service runs as. It needs neither root nor a privileged container, only unprivileged user namespaces (on Ubuntu 23.10 or newer, run `sudo foil setup` once). Each command gets:
+
+- the system folders read-only, the temporary directory writable, a private `/tmp` and an empty home folder
+- its own PID and IPC namespaces, and no network
+- a clean environment, with the service's `PATH`
+- cgroup limits: 1 CPU, and `memory_limit_MB` (4 GB if unset)
+- every process it started stopped when it ends, even if the service is killed
+
+Set `FOIL` to the foil binary if it is not on `PATH`, and `FOIL_ALLOW_READ` (colon-separated) to folders outside the system folders that the code needs to read, such as an interpreter installed under a home folder.
