@@ -74,8 +74,9 @@ class RunConfig(BaseModel):
         '''
         none: no isolation, cleanup_process and restore_bash are best effort for correctness
         lite: handcrafted overlayfs + chroot + cgroups isolation, fast (< 100 ms overhead)
+        foil: each command under `foil run --strict` (https://github.com/ai-agentic-tools/Foil), no root needed
         '''
-        isolation: Literal['none', 'lite']
+        isolation: Literal['none', 'lite', 'foil']
         set_uid: Optional[int] = None
         cleanup_process: bool
         restore_bash: bool

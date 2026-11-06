@@ -15,6 +15,7 @@
 import asyncio
 import base64
 import os
+import shlex
 import subprocess
 import time
 import traceback
@@ -150,6 +151,35 @@ async def run_commands(compile_command: Optional[str], run_command: str, cwd: st
                                              cwd,
                                              extra_env,
                                              preexec_fn=preexec_fn)
+        for filename in args.fetch_files:
+            fp = os.path.abspath(os.path.join(cwd, filename))
+            if os.path.isfile(fp):
+                with open(fp, 'rb') as f:
+                    content = f.read()
+                base64_content = base64.b64encode(content).decode('utf-8')
+                files[filename] = base64_content
+        return CodeRunResult(compile_result=compile_res, run_result=run_res, files=files)
+
+    elif config.sandbox.isolation == 'foil':
+        # foil (https://github.com/ai-agentic-tools/Foil) isolates each command as an ordinary user:
+        # system folders read-only, only cwd writable, a private /tmp and home, its own PID and IPC
+        # namespaces, no network, a clean environment, and cgroup limits. FOIL names the binary;
+        # FOIL_ALLOW_READ (colon-separated) shows extra folders, such as an interpreter outside /usr.
+        foil = os.environ.get('FOIL', 'foil')
+        reads = [p for p in os.environ.get('FOIL_ALLOW_READ', '').split(':') if p]
+        path = (extra_env or {}).get('PATH', os.environ.get('PATH', ''))
+        memory = f'{args.memory_limit_MB}M' if args.memory_limit_MB > 0 else '4G'
+        flags = ['--strict', '--memory', memory, '--cpus', '1', '--allow-write', cwd, '--setenv', f'PATH={path}']
+        for p in reads:
+            flags += ['--allow-read', p]
+
+        def wrap(command: str) -> str:
+            return f'cd {shlex.quote(cwd)} && exec {shlex.join([foil, "run", *flags, "--", "bash", "-c", command])}'
+
+        if compile_command is not None:
+            compile_res = await run_command_bare(wrap(compile_command), args.compile_timeout, None, cwd, extra_env)
+        if compile_res is None or (compile_res.status == CommandRunStatus.Finished and compile_res.return_code == 0):
+            run_res = await run_command_bare(wrap(run_command), args.run_timeout, args.stdin, cwd, extra_env)
         for filename in args.fetch_files:
             fp = os.path.abspath(os.path.join(cwd, filename))
             if os.path.isfile(fp):
